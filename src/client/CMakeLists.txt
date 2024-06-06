@@ -8,4 +8,4 @@ add_executable(ChatClient ${SRC_LIST})
 #add_executable(ChatServer ${SRC_LIST}${DB_LIST})
 
 #指定可执行文件链接时依赖的库文件 读写两个线程
-target_link_libraries(ChatClient pthread)
+target_link_libraries(ChatClient pthread myencryption)

@@ -1,4 +1,5 @@
 #include "chatservice.hpp"
+#include "encryption.hpp"
 #include "public.hpp"
 #include <muduo/base/Logging.h>
 #include <string>
@@ -54,7 +55,13 @@ void ChatService::login(const TcpConnectionPtr &conn,json &js,Timestamp time){
             response["msgid"] = LOGIN_MSG_ACK;
             response["errno"] = 2;                      //检验消息。=0无误
             response["errmsg"] = "该账户已经登录。";
-            conn->send(response.dump());
+            
+            // AES加密
+            string response_encry = aes_opt::aesEncrypt(response.dump());
+            if (response_encry.empty()) {
+                cout << "server:reg:AES加密失败了。" << endl;
+            }
+            conn->send(response_encry);
         }else{
             //_userConnMap建立用户与服务器的长连接.记录。
             //利用只能指针,自动加解锁。
@@ -117,8 +124,12 @@ void ChatService::login(const TcpConnectionPtr &conn,json &js,Timestamp time){
                 //读取离线消息后,移除离线消息。
                 _offmsgOpt.remove(user.getId());
             }
-
-            conn->send(response.dump());
+            string response_encry = aes_opt::aesEncrypt(response.dump());
+            if (response_encry.empty()) {
+                cout << "server:reg:AES加密失败了。" << endl;
+            }
+            //cout << response_encry << "\n" << response_encry.size() << endl;
+            conn->send(response_encry);
         }
     }else{
         //登录失败
@@ -126,7 +137,12 @@ void ChatService::login(const TcpConnectionPtr &conn,json &js,Timestamp time){
         response["msgid"] = LOGIN_MSG_ACK;
         response["errno"] = 1;                      
         response["errmsg"] = "用户名或密码错误。";
-        conn->send(response.dump());
+        // AES加密
+        string response_encry = aes_opt::aesEncrypt(response.dump());
+        if (response_encry.empty()) {
+            cout << "server:reg:AES加密失败。" << endl;
+        }
+        conn->send(response_encry);
     }
 }
 void ChatService::loginOut(const TcpConnectionPtr &conn,json &js,Timestamp time){
@@ -161,13 +177,24 @@ void ChatService::reg(const TcpConnectionPtr &conn,json &js,Timestamp time){
         response["msgid"] = REG_MSG_ACK;
         response["errno"] = 0;                      //检验消息。=0无误
         response["id"] = user.getId();
-        conn->send(response.dump());
+
+        // AES加密
+        string response_encry = aes_opt::aesEncrypt(response.dump());
+        if (response_encry.empty()) {
+            cout << "server:reg:AES加密失败。" << endl;
+        }
+        conn->send(response_encry);
     }else{
         //注册失败
         json response;
         response["msgid"] = REG_MSG_ACK;
         response["errno"] = 1;                     
-        conn->send(response.dump());
+        // AES加密
+        string response_encry = aes_opt::aesEncrypt(response.dump());
+        if (response_encry.empty()) {
+            cout << "server:reg:AES加密失败了。" << endl;
+        }
+        conn->send(response_encry);
     }
 }
 
@@ -180,7 +207,12 @@ void ChatService::oneChat(const TcpConnectionPtr &conn,json &js,Timestamp time){
         lock_guard<mutex> lock(_connMutex);
         auto it = _userConnMap.find(dstId);
         if(it != _userConnMap.end()){ 
-            it->second->send(js.dump());
+            // AES加密
+            string response_encry = aes_opt::aesEncrypt(js.dump());
+            if (response_encry.empty()) {
+                cout << "server:reg:AES加密失败了。" << endl;
+            }
+            it->second->send(response_encry);
             return;
         }
     }
@@ -262,7 +294,12 @@ void ChatService::groupChat(const TcpConnectionPtr &conn,json &js,Timestamp time
     {
         auto it = _userConnMap.find(dstId[i]);
         if(it != _userConnMap.end()){ 
-            it->second->send(js.dump());
+            // AES加密
+            string response_encry = aes_opt::aesEncrypt(js.dump());
+            if (response_encry.empty()) {
+                cout << "server:reg:AES加密失败了。" << endl;
+            }
+            it->second->send(response_encry);
             return;
         }else{
             //查询 dstId 是否在线。

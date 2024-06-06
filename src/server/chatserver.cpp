@@ -1,5 +1,6 @@
 #include "chatserver.hpp"
 #include "json.hpp"
+#include "encryption.hpp"
 #include <functional>
 #include <string>
 #include "chatservice.hpp"
@@ -36,8 +37,15 @@ void ChatServer::onMessage (const TcpConnectionPtr& conn,
 		Buffer* buffer,
 		Timestamp time){
     string buf = buffer->retrieveAllAsString();
+    // 接收到buf数据,解密。
+    // AES解密
+    // cout << "server:onMsg:" << buf << ":" << buf.size() << endl;
+    string buf_unencry = aes_opt::aesDecrypt(buf);
+    if (buf_unencry.empty()) {
+        cout << "Server:onMsg:AES解码失败。" << endl;
+    }
     //数据解码
-    json js = json::parse(buf);
+    json js = json::parse(buf_unencry);
     //通过js["msgid"]获取handler.调用对应操作函数。
     auto msgHandler = ChatService::instance()->getHandler(js["msgid"].get<int>());
     //调用回调消息绑定的事件处理函数。

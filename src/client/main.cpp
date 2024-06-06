@@ -7,6 +7,7 @@
 #include <string>
 #include "User.hpp"
 #include "AllGroup.hpp"
+#include "encryption.hpp"
 #include <thread>
 #include <vector>
 #include <unordered_map>
@@ -81,8 +82,14 @@ void readTaskHandler(int clientfd){
             close(clientfd);
             exit(-1);
         }
+        // AES解密
+        string buffer_unencry = aes_opt::aesDecrypt(string(buffer,len));
+        if (buffer_unencry.empty()) {
+            cout << "client:reg:AES解码失败。" << endl;
+        }
+
         //cout << "buffer---" << buffer << endl;
-        json js = json::parse(buffer);
+        json js = json::parse(buffer_unencry);
         if(ONE_CHAT_MSG == js["msgid"].get<int>()){
             cout << "私聊消息:"<<js["time"].get<string>() << " [" << js["id"] << "] " << 
             js["name"].get<string>() << " said: " << js["msg"].get<string>() << endl;
@@ -176,18 +183,33 @@ int main(int argc,char** argv){
                 js["msgid"] = LOGIN_MSG;
                 js["id"] = stoi(id);
                 js["password"] = password;
-                string request = js.dump();
-                int len = send(cliSocket,request.c_str(),strlen(request.c_str())+1,0);
+                
+                // AES加密
+                string request_encry = aes_opt::aesEncrypt(js.dump());
+                if (request_encry.empty()) {
+                    cout << "reg:AES加密失败。" << endl;
+                }
+                cout << request_encry << ":" << request_encry.size() << endl;
+                int len = send(cliSocket,request_encry.c_str(),request_encry.size(),0);
                 if(-1 == len){
-                    cerr << "send reg msg error:" << request << endl;
+                    cerr << "send reg msg error:" << js.dump() << endl;
                 }
                 else{
-                    char buffer[1024] = {0};
+                    char buffer[1024];
                     len = recv(cliSocket,buffer,1024,0);
+                    //cout << "client:log:" << string(buffer,len) << "\n" << "buffer_size():" << strlen(buffer) << ":" << len << endl;
                     if(-1 == len){
                         cerr << "recv reg response error." << endl;
-                    }else{
-                        json responsejs = json::parse(buffer);
+                    }
+                    else{
+                        // AES解密---由于加密字符串包含\0。需要把C风格变为原来的string字符串。
+                        string decryptedText = aes_opt::aesDecrypt(string(buffer,len));
+                        
+                        if (decryptedText.empty()) {
+                            cout << "client:reg:AES解码失败了。" << endl;
+                        }
+
+                        json responsejs = json::parse(decryptedText);
                         //cout << responsejs.dump() << endl;
                         if(0 == responsejs["errno"].get<int>()){
                             string name = responsejs["name"];
@@ -278,18 +300,31 @@ int main(int argc,char** argv){
                 js["msgid"] = REG_MSG;
                 js["name"] = name;                      //检验消息。=0无误
                 js["password"] = password;
-                string request = js.dump();
-                int len = send(cliSocket,request.c_str(),strlen(request.c_str())+1,0);
+
+                // AES加密
+                string request_encry = aes_opt::aesEncrypt(js.dump());
+                if (request_encry.empty()) {
+                    cout << "reg:AES加密失败了。" << endl;
+                }
+                //cout << "client:" << request_encry << ":" << request_encry.size() << endl;
+                int len = send(cliSocket,request_encry.c_str(),request_encry.size(),0);
                 if(len == -1){
                     //cout << "send error." << endl;
-                    cerr << "send reg msg error:" << request << endl;
+                    cerr << "send reg msg error:" << request_encry << endl;
                 }else{
                     char buffer[1024] = {0};
                     len = recv(cliSocket,buffer,1024,0);
                     if(-1 == len){
                         cerr << "recv reg response error." << endl;
                     }else{
-                        json responsejs = json::parse(buffer);
+                        // AES解密
+                        string decryptedText = aes_opt::aesDecrypt(string(buffer,len));
+                        if (decryptedText.empty()) {
+                            cout << "client:reg:AES解码失败了。" << endl;
+                            return 1;
+                        }
+
+                        json responsejs = json::parse(decryptedText);
                         if(0 != responsejs["errno"].get<int>()){
                             cerr << name << " is already exist,register error." << endl;
                         }else{
@@ -339,10 +374,15 @@ void chat(int clientfd,string message){
     js["dstid"] = friendid;
     js["msg"] = msg;
     js["time"] = getCurrentTime();
-    string buffer = js.dump();
-    int len = send(clientfd,buffer.c_str(),strlen(buffer.c_str())+1,0);
+    
+    string request_encry = aes_opt::aesEncrypt(js.dump());
+    if (request_encry.empty()) {
+        cout << "reg:AES加密失败了。" << endl;
+    }
+
+    int len = send(clientfd,request_encry.c_str(),request_encry.size(),0);
     if(-1==len){
-        cerr << "send chat msg error -> " << buffer << endl;
+        cerr << "send chat msg error -> " << js.dump() << endl;
     }
 }
 
@@ -351,11 +391,13 @@ void addfriend(int clientfd,string msg){
     json js;
     js["msgid"] = ADD_FRIEND_MSG;
     js["id"] = _currentUser.getId();
-    js["friendid"] = friendid;
-    string buffer = js.dump();
-    int len = send(clientfd,buffer.c_str(),strlen(buffer.c_str())+1,0);
+    string request_encry = aes_opt::aesEncrypt(js.dump());
+    if (request_encry.empty()) {
+        cout << "reg:AES加密失败了。" << endl;
+    }
+    int len = send(clientfd,request_encry.c_str(),request_encry.size(),0);
     if(-1==len){
-        cerr << "send addfriend msg error -> " << buffer << endl;
+        cerr << "send addfriend msg error -> " << js.dump() << endl;
     }
 }
 void creategroup(int clientfd,string message){
@@ -371,11 +413,15 @@ void creategroup(int clientfd,string message){
     js["userid"] = _currentUser.getId();
     js["groupname"] = groupname;
     js["groupdesc"] = groupdesc;
-    string buffer = js.dump();
-    int len = send(clientfd,buffer.c_str(),strlen(buffer.c_str())+1,0);
+    
+    string request_encry = aes_opt::aesEncrypt(js.dump());
+    if (request_encry.empty()) {
+        cout << "reg:AES加密失败了。" << endl;
+    }
+    int len = send(clientfd,request_encry.c_str(),request_encry.size(),0);
     if(-1==len){
-        cerr << "send creategroup msg error -> " << buffer << endl;
-    }    
+        cerr << "send creategroup msg error -> " << js.dump() << endl;
+    }  
 }
 void addgroup(int clientfd,string message){
     int groupid = atoi(message.c_str());
@@ -384,11 +430,14 @@ void addgroup(int clientfd,string message){
     js["userid"] = _currentUser.getId();
     js["groupid"] = groupid;
 
-    string buffer = js.dump();
-    int len = send(clientfd,buffer.c_str(),strlen(buffer.c_str())+1,0);
+    string request_encry = aes_opt::aesEncrypt(js.dump());
+    if (request_encry.empty()) {
+        cout << "reg:AES加密失败了。" << endl;
+    }
+    int len = send(clientfd,request_encry.c_str(),request_encry.size(),0);
     if(-1==len){
-        cerr << "send addgroup msg error -> " << buffer << endl;
-    }    
+        cerr << "send addfriend msg error -> " << js.dump() << endl;
+    }
 }
 void groupchat(int clientfd,string message){
     int idx = message.find(":");
@@ -406,21 +455,26 @@ void groupchat(int clientfd,string message){
     js["groupid"] = groupid;
     js["msg"] = msg;
 
-    string buffer = js.dump();
-    int len = send(clientfd,buffer.c_str(),strlen(buffer.c_str())+1,0);
+    string request_encry = aes_opt::aesEncrypt(js.dump());
+    if (request_encry.empty()) {
+        cout << "reg:AES加密失败了。" << endl;
+    }
+    int len = send(clientfd,request_encry.c_str(),request_encry.size(),0);
     if(-1==len){
-        cerr << "send addgroup msg error -> " << buffer << endl;
-    }    
+        cerr << "send groupchat msg error -> " << js.dump() << endl;
+    } 
 }
 void loginout(int clientfd,string str){
     json js;
     js["msgid"] = LOGIN_OUT;
     js["id"] = _currentUser.getId();
-    string buffer = js.dump();
-    int len = send(clientfd,buffer.c_str(),strlen(buffer.c_str())+1,0);
-    if(-1 == len){
-        cerr << "send loginout message error." << endl;
-    }else{
-        isMainMenuRunning = false;
+
+    string request_encry = aes_opt::aesEncrypt(js.dump());
+    if (request_encry.empty()) {
+        cout << "reg:AES加密失败了。" << endl;
     }
+    int len = send(clientfd,request_encry.c_str(),request_encry.size(),0);
+    if(-1==len){
+        cerr << "send loginout msg error -> " << js.dump() << endl;
+    } 
 }
